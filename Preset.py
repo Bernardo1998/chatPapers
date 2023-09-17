@@ -10,7 +10,7 @@ class Preset:
         if self.rountine_config_path is not None:
             self.rountine_config = json.load(open(self.rountine_config_path))
         else:
-            self.rountine_config = {"checked_paper_titles":{}, "preset_papers":{}}
+            self.rountine_config = {"checked_paper":{'Title':[], 'URL':[]}, "preset_papers":{}}
 
     def change_preset(self):
         choice = 0
@@ -42,9 +42,16 @@ class Preset:
         else:
             print(f"Keyword {keyword} does not exist! Removal not completed")
 
+    def get_keywords(self):
+        return self.rountine_config['preset_papers'].keys()
+    
+    def get_read(self):
+        return self.rountine_config['checked_paper']
+    
+    def update_read(self, title, url):
+        self.rountine_config['checked_paper']['Title'].append(title)
+        self.rountine_config['checked_paper']['URL'].append(url)
+
     def save_preset(self):
         with open(self.rountine_config_path, 'w') as rtF:
             rtF.write(json.dumps(self.rountine_config_path))
-
-    def get_keywords(self):
-        return self.rountine_config['preset_papers'].keys()

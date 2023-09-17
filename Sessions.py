@@ -5,6 +5,7 @@ import re
 import pandas as pd
 import requests
 from tqdm import tqdm
+import time
 
 import json
 from Preset import Preset
@@ -35,14 +36,13 @@ class Session:
         self.search_keywords = args.search_keywords
         self.topic = args.topic
         self.paper_each_round = args.paper_each_round
-        self.read = args.read
-        self.preset = Preset(args.rountin_config_path)
+        self.preset = Preset(args.rountine_config)
 
         openai.api_key = json.load(open(args.apikey))['apikey']
-        pass
     
     def run(self, engine, reader):
         action = self.action #['load', 'interactive', 'iterate']
+        print("Running:",action)
 
         if action == 'interactive':
             self.interactive_session(engine, reader)
@@ -51,7 +51,7 @@ class Session:
             search_keywords = self.search_keywords
             #print(paper_list_path, search_keywords)
             csv_path = ''.join(['csv/summary']+[w.capitalize() for w in search_keywords.split()]+['.csv'])
-            self.summarize_paper_list(engine, reader, paper_list_path, csv_path, search_keywords,read=self.read)
+            self.summarize_paper_list(engine, reader, paper_list_path, csv_path, search_keywords)
         elif action == 'iterate':
             topic = self.topic
             self.iterative(topic,engine, reader)
@@ -66,18 +66,18 @@ class Session:
             search_keywords = reader.design_search_keywords(question) 
             search_keywords = re.sub(r"['\"]", "", search_keywords)
             print(f"Suggested keyword:{search_keywords}")
-        elif choice == 2:
+        elif choice in [2,4]:
             question = None
             search_keywords = request
         elif choice == 3:
             pass
 
         if choice in [1,2]:
-            self.search_by_keyword(engine, reader, search_keywords)
+            self.filter_by_keyword(engine, reader, search_keywords)
         elif choice == 3:
             self.selectAndread_local_papers(engine, reader)
         elif choice == 4:
-            pass
+            self.rountine_check(engine, reader, search_keywords)
 
 
     def interactive_session_type(self):
@@ -102,7 +102,7 @@ class Session:
             
         return input(next_prompt), choice
     
-    def search_by_keyword(self, engine, reader, search_keywords):   
+    def filter_by_keyword(self, engine, reader, search_keywords):   
         paper_each_round = self.paper_each_round
         searched_round, max_round = 0, 10
         if not os.path.exists("csv"):
@@ -126,7 +126,7 @@ class Session:
         return related_df
 
     def filter_by_abstracts(self, engine, reader, search_keywords, paper_each_round=10):
-        abstracts, _, bibs = engine.get_top_abstracts(search_keywords,num_papers=paper_each_round)
+        abstracts, urls, bibs = engine.get_top_abstracts(search_keywords,num_papers=paper_each_round)
         
         abstracts_dicts = []
 
@@ -138,6 +138,8 @@ class Session:
                 #print(bib)
                 abstract_info = reader.read_abstract(ab,search_keywords)
                 bib.update(abstract_info)
+                bib = {k.capitalize():v for k,v in bib.items()}
+                bib['URL'] = urls[i]
                 abstracts_dicts.append(bib)
             except Exception as e:
                 print(f"Error when reading abstract: {e}")
@@ -203,9 +205,9 @@ class Session:
 
     # TODO: make paper_list a df with both title and url. 
     # First try read by title and return extracted bib. If failed, use url.
-    def summarize_paper_list(self, engine, reader, paper_list_path, csv_path, search_keywords='', pdf_dirpath='pdfs', chunk_size=1000, read=None):
+    def summarize_paper_list(self, engine, reader, paper_list_path, csv_path, search_keywords='', pdf_dirpath='pdfs', chunk_size=1000, save_output=True, download_pdf=True):
         '''
-            paper_list_path: a pd DataFrame or path to a pd dataframe, each row has a title and a url. 
+            paper_list_path: a pd DataFrame or path to a pd dataframe, each row has a title and a url/pdf path. 
             readPapers: file path of a pd data frame of all read papers.
         '''
         dfs = []
@@ -213,17 +215,23 @@ class Session:
             paper_list = pd.read_csv(paper_list_path)
         elif isinstance(paper_list_path, pd.DataFrame):
             paper_list = paper_list_path
+
+        if save_output:
+            assert csv_path is not None
         #print("Paper_list is:",paper_list)
-        readPapers = pd.read_csv(read) if read is not None else None
-        readPapersPath = read if read is not None else "DefaultRreadPapers.csv"
+        readPapers = self.preset.get_read()
         
         for i in range(paper_list.shape[0]):
             # Skip read papers
-            title, url = paper_list['Title'][i], paper_list['URL'][i]
-            if readPapers is not None and (title in readPapers['Title'] or url in readPapers['URL']):
-                continue 
+            if download_pdf:
+                title, url = paper_list['Title'][i], paper_list['URL'][i]
+                if readPapers is not None and (title in readPapers['Title'] or url in readPapers['URL']):
+                    continue 
 
-            pdf_path = engine.download_pdf(url,pdf_dirpath)
+                pdf_path = engine.download_pdf(url,pdf_dirpath)
+            else:
+                title, pdf_path, url = paper_list['Title'][i], paper_list['Path_to_pdf'][i], None
+            print(f"Detail checking: {title}")
                 
             try:
                 chunk = engine.split_pdf(pdf_path,chunk_size)
@@ -237,14 +245,16 @@ class Session:
                 summary = pd.DataFrame(summary, index=[i])
                 
             dfs.append(summary)
+            self.preset.update_read(title,url)
             
         output = pd.concat(dfs, axis=0).reset_index()
         #print(output, paper_list)
         output = pd.concat([paper_list,output], axis=1)
-        output.to_csv(csv_path, index=False)
-        
-        readPapers = pd.concat([readPapers, paper_list], axis=0)
-        readPapers.to_csv(readPapersPath, index=False)
+
+        if save_output:
+            output.to_csv(csv_path, index=False)            
+        else:
+            return output
 
     def iterative(self, topic, engine, reader, max_round=2, chunk_size=500, pdf_dirpath='pdfs'):
         used_keywords = []
@@ -304,9 +314,32 @@ class Session:
         # First check any changes in precheck
         self.preset.change_preset()
 
+        output_df = pd.DataFrame()
+
         # Go over every preset keywords
         for keyword in self.preset.get_keywords():
-            related_df = self.search_by_keyword(engine, reader, keyword)
+            print("*"*40)
+            print(f"Checking keyword:{keyword}")
+            related_df = self.filter_by_keyword(engine, reader, keyword)
+
+            # Go through citations of preset key papers and add them to related_df as well. 
+            # related_df = pd.condcat([related_df, engine.check_citations])
+            print(related_df)
+
+            # Read keywords in details
+            detailed_output = self.summarize_paper_list(engine, reader, related_df, None, search_keywords,save_output=False)
+            detailed_output['keyword'] = [keyword] * len(detailed_output)
+
+            output_df = pd.concat([output_df, detailed_output])
+
+        # Get pdf in pdf dir and check
+        # pdf_fils = get_pdf_files(path_to_another_pdf_dir)
+        # output_for_these_pdf = summarize_paper_list()
+        # output_df = pd.concat([output_df, output_for_these_pdf])
+
+        output_df.to_csv(f"csv/rountine_check_{str(time.time()).csv}")
+
+            
         
         
 

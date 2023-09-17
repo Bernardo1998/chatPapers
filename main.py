@@ -19,12 +19,13 @@ def main():
     parser.add_argument('--paper_each_round', type=int, help='papers to be searched in each query', default=15)
     parser.add_argument('--model', type=str, help='name of the model', default='gpt-3.5-turbo')
     parser.add_argument('--apikey', type=str, help='path to the openai api key', default="configs/default.json") # rountine_config
-    parser.add_argument('--rountine_config', type=str, help='path to records of rountine checking', default="configs/rountine_config.json")
+    parser.add_argument('--rountine_config', type=str, help='path to records of rountine checking', default="configs/routine_config.json")
     
     args = parser.parse_args()
 
     engine = ScholarlySearch()
     reader = ChatPaper(model=args.model)
+    print("Init!")
     session = Session(args)
             
     session.run(engine, reader)
