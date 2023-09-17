@@ -1,0 +1,6 @@
+configs/*
+csv/*
+pdfs/*
+__pychache__*
+.ipynb_checkpoints/*
+*.pdf
