@@ -1,0 +1,4 @@
+ollama
+pydantic
+fitz
+IPython
