@@ -73,8 +73,8 @@ class Researcher:
         if intro_match:
             introduction = text[intro_match.start(1):intro_match.end(1)].strip()
         else:
-            # Take next 4000 characters if introduction not found
-            introduction = text[2000:6000].strip()
+            # Take next 5000 characters if introduction not found
+            introduction = text[2000:7000].strip()
             
         return abstract, introduction
 
@@ -190,6 +190,7 @@ class Researcher:
         Current Status: {topic_info.get('current_status', '')}
         Important Papers:
         {important_papers_str}
+        Key Challenges to address: {",".join(topic_info.get('key_challenges', []))}
 
         Please analyze the connection between this paper and the research topic by answering these questions:
 
@@ -202,10 +203,10 @@ class Researcher:
         If no related paper, leave this blank.
 
         4. How does this paper help advance the research topic and address any challenges listed in the current status?
-        Consider the topic's current status: {topic_info.get('current_status', '')}
+        Consider the topic's current status: {topic_info.get('current_status', '')} and key challenges: {",".join(topic_info.get('key_challenges', []))}
 
         5. Should this paper be read in detail? Consider:
-        - Does the method show groundbreaking novelty or fundamentally better performance (not just incremental improvement)?
+        - Does the method show substantial novelty in method or fundamentally better performance (not just incremental improvement)?
         - Does it explore a novel or understudied topic/intersection?
         - Is the study extensive and methodologically sound?
         Answer with true only if the paper meets multiple criteria above and appears particularly significant.

@@ -2,3 +2,6 @@ ollama
 pydantic
 fitz
 IPython
+requests 
+beautifulsoup4
+serpapi
